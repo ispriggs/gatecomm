@@ -73,7 +73,7 @@ export default function HomeScreen() {
         style={styles.logo}
         resizeMode="contain"
       />
-      <Text style={styles.brandName}>GateComm</Text>
+      <Text style={styles.brandName}></Text>
 
       <View style={styles.buttonContainer}>
         <TouchableOpacity style={styles.button} onPress={() => setShowLogin(true)}>
