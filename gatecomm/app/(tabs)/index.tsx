@@ -24,7 +24,7 @@ export default function HomeScreen() {
     return (
       <View style={styles.container}>
         <Image
-          source={require('../assets/Stylized_Leaf_Logo_Design_Fotor-removebg-preview.png')}
+          source={require('../../assets/Stylized_Leaf_Logo_Design_Fotor-removebg-preview.png')}
           style={styles.logo}
           resizeMode="contain"
         />
@@ -69,7 +69,7 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <Image
-        source={require('../assets/Stylized_Leaf_Logo_Design_Fotor-removebg-preview.png')}
+        source={require('../../assets/Stylized_Leaf_Logo_Design_Fotor-removebg-preview.png')}
         style={styles.logo}
         resizeMode="contain"
       />
