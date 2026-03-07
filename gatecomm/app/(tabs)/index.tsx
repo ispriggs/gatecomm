@@ -1,122 +1,171 @@
 // ============================================
 // IMPORTS
-// React and React Native components we need
 // ============================================
-import { useState } from 'react'
-import { 
-  StyleSheet,         // for creating styles
-  View,               // like a <div> - container
-  Text,               // for displaying text
-  TouchableOpacity,   // a pressable button
-  Image,              // for displaying images
-  TextInput,          // input field for typing
-  Alert,              // popup alert messages
-  KeyboardAvoidingView, // moves screen up when keyboard appears
-  Platform,           // detects if iOS or Android
-  ScrollView          // makes content scrollable
+import { useState, useEffect } from 'react'
+import {
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  Image,
+  TextInput,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from 'react-native'
-import { supabase } from '../../supabase'  // our database connection
-import { router } from 'expo-router'        // for navigating between screens
+import * as LocalAuthentication from 'expo-local-authentication'
+import { supabase } from '../../supabase'
+import { router } from 'expo-router'
 
 
 // ============================================
 // MAIN SCREEN COMPONENT
-// This is the first screen users see
 // ============================================
 export default function HomeScreen() {
 
   // ============================================
   // STATE VARIABLES
-  // These are like live variables that update the screen when they change
   // ============================================
-  const [email, setEmail] = useState('')          // stores what user types in email field
-  const [password, setPassword] = useState('')    // stores what user types in password field
-  const [loading, setLoading] = useState(false)   // true = show "Logging in..." on button
-  const [showLogin, setShowLogin] = useState(false) // true = show login form, false = show main buttons
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [showLogin, setShowLogin] = useState(false)
+  const [hasStoredSession, setHasStoredSession] = useState(false)  // true = returning user
+  const [faceIDAvailable, setFaceIDAvailable] = useState(false)    // true = device supports Face ID
 
 
   // ============================================
-  // LOGIN FUNCTION
-  // Runs when user taps the Login button
+  // ON MOUNT - Check for existing session and Face ID support
   // ============================================
-  const handleLogin = async () => {
-    setLoading(true) // show "Logging in..." on button
+  useEffect(() => {
+    checkSessionAndBiometrics()
+  }, [])
 
-    // send email and password to Supabase to check if correct
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+  const checkSessionAndBiometrics = async () => {
+    // Check if device supports biometrics (Face ID / Touch ID)
+    const compatible = await LocalAuthentication.hasHardwareAsync()
+    const enrolled = await LocalAuthentication.isEnrolledAsync()
+    const biometricsAvailable = compatible && enrolled
+    setFaceIDAvailable(biometricsAvailable)
 
-    if (error) {
-      // if wrong email/password, show error popup
-      Alert.alert('Error', error.message)
-    } else {
-      // if correct, go to dashboard screen
-      router.replace('/dashboard')
+    // Check if there's an existing Supabase session (returning user)
+    const { data: { session } } = await supabase.auth.getSession()
+
+    if (session && biometricsAvailable) {
+      // Returning user with Face ID available - prompt immediately
+      setHasStoredSession(true)
+      triggerFaceID()
     }
-
-    setLoading(false) // hide "Logging in..." on button
   }
 
 
   // ============================================
-  // LOGIN FORM SCREEN
-  // Only shows when user taps the Login button
-  // showLogin must be true to see this
+  // FACE ID AUTHENTICATION
+  // ============================================
+  const triggerFaceID = async () => {
+    const result = await LocalAuthentication.authenticateAsync({
+      promptMessage: 'Login with Face ID',
+      fallbackLabel: 'Use Password',         // shows on Face ID failure
+      cancelLabel: 'Cancel',
+      disableDeviceFallback: false,           // allows PIN fallback on device
+    })
+
+    if (result.success) {
+      // Face ID passed - check session is still valid then go to dashboard
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        router.replace('/dashboard')
+      } else {
+        // Session expired - show login form
+        setHasStoredSession(false)
+        setShowLogin(true)
+      }
+    }
+    // If Face ID fails or cancelled, user stays on screen and can use email/password
+  }
+
+
+  // ============================================
+  // EMAIL / PASSWORD LOGIN
+  // ============================================
+  const handleLogin = async () => {
+    setLoading(true)
+
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+
+    if (error) {
+      Alert.alert('Error', error.message)
+    } else {
+      router.replace('/dashboard')
+    }
+
+    setLoading(false)
+  }
+
+
+  // ============================================
+  // LOGIN FORM SCREEN (fallback)
   // ============================================
   if (showLogin) {
     return (
-      // KeyboardAvoidingView pushes screen up when keyboard appears
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        {/* ScrollView makes content scrollable so nothing gets hidden behind keyboard */}
         <ScrollView
           contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled" // allows tapping buttons while keyboard is open
+          keyboardShouldPersistTaps="handled"
         >
-          {/* Logo image */}
+          {/* Logo */}
           <Image
             source={require('../../assets/Stylized_Leaf_Logo_Design_Fotor-removebg-preview.png')}
             style={styles.logo}
             resizeMode="contain"
           />
 
-          {/* App name */}
           <Text style={styles.brandName}></Text>
 
-          {/* Email input field */}
+          {/* Email input */}
           <TextInput
             style={styles.input}
             placeholder="Email"
             placeholderTextColor="#999"
             value={email}
-            onChangeText={setEmail}         // updates email variable as user types
-            autoCapitalize="none"           // stops auto capitalising email
-            keyboardType="email-address"    // shows email keyboard with @ symbol
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
           />
 
-          {/* Password input field */}
+          {/* Password input */}
           <TextInput
             style={styles.input}
             placeholder="Password"
             placeholderTextColor="#999"
             value={password}
-            onChangeText={setPassword}      // updates password variable as user types
-            secureTextEntry                 // hides password with dots
+            onChangeText={setPassword}
+            secureTextEntry
           />
 
-          {/* Login button - calls handleLogin when pressed */}
+          {/* Login button */}
           <TouchableOpacity
             style={styles.button}
             onPress={handleLogin}
-            disabled={loading}              // disables button while logging in
+            disabled={loading}
           >
             <Text style={styles.buttonText}>
-              {loading ? 'Logging in...' : 'Login'}  {/* changes text while loading */}
+              {loading ? 'Logging in...' : 'Login'}
             </Text>
           </TouchableOpacity>
 
-          {/* Back button - hides login form and shows main buttons again */}
+          {/* Face ID button - only show if available */}
+          {faceIDAvailable && hasStoredSession && (
+            <TouchableOpacity onPress={triggerFaceID}>
+              <Text style={styles.faceIDText}>🔒 Use Face ID instead</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Back button */}
           <TouchableOpacity onPress={() => setShowLogin(false)}>
             <Text style={styles.backText}>← Back</Text>
           </TouchableOpacity>
@@ -129,40 +178,47 @@ export default function HomeScreen() {
 
   // ============================================
   // MAIN WELCOME SCREEN
-  // Shows when app first opens (showLogin is false)
   // ============================================
   return (
     <View style={styles.container}>
 
-      {/* Logo image */}
+      {/* Logo */}
       <Image
         source={require('../../assets/Stylized_Leaf_Logo_Design_Fotor-removebg-preview.png')}
         style={styles.logo}
         resizeMode="contain"
       />
 
-      {/* App name */}
       <Text style={styles.brandName}></Text>
 
-      {/* Main action buttons */}
       <View style={styles.buttonContainer}>
 
-        {/* Login button - shows the login form */}
+        {/* Face ID button for returning users */}
+        {hasStoredSession && faceIDAvailable && (
+          <TouchableOpacity style={styles.faceIDButton} onPress={triggerFaceID}>
+            <Text style={styles.buttonText}>🔒 Login with Face ID</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Login with email/password */}
         <TouchableOpacity style={styles.button} onPress={() => setShowLogin(true)}>
           <Text style={styles.buttonText}>Login</Text>
         </TouchableOpacity>
 
-        {/* Create Account button - not built yet */}
-        <TouchableOpacity style={styles.button}>
+        {/* Create Account */}
+        <TouchableOpacity
+          style={styles.button}
+          onPress={() => router.push('/register')}
+        >
           <Text style={styles.buttonText}>Create Account</Text>
         </TouchableOpacity>
 
-        {/* Visitor gate button - not built yet */}
+        {/* Visitor gate */}
         <TouchableOpacity style={styles.button}>
           <Text style={styles.buttonText}>Visitor / Worker Gate</Text>
         </TouchableOpacity>
 
-        {/* Owner/Renter gate button - not built yet */}
+        {/* Owner/Renter gate */}
         <TouchableOpacity style={styles.button}>
           <Text style={styles.buttonText}>Owner / Renter Gate</Text>
         </TouchableOpacity>
@@ -175,20 +231,17 @@ export default function HomeScreen() {
 
 // ============================================
 // STYLES
-// Like CSS but written in JavaScript
 // ============================================
 const styles = StyleSheet.create({
 
-  // Main container - full screen white background
-container: {
+  container: {
     flex: 1,
-    backgroundColor: '#e9e0e0',  // also fix your background colour back to white!
+    backgroundColor: '#e9e0e0',
     justifyContent: 'center',
-    paddingHorizontal: 8,   // ← reduce this to make inputs wider
+    paddingHorizontal: 8,
     paddingVertical: 24,
   },
 
-  // Scroll container for login form
   scrollContent: {
     flexGrow: 1,
     alignItems: 'center',
@@ -197,7 +250,6 @@ container: {
     paddingVertical: 40,
   },
 
-  // Logo sizing
   logo: {
     width: 180,
     height: 180,
@@ -205,22 +257,19 @@ container: {
     alignSelf: 'center',
   },
 
-  // App name text
   brandName: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#1a5c38',           // dark green
+    color: '#1a5c38',
     marginBottom: 48,
   },
 
-  // Container for the 4 main buttons
   buttonContainer: {
     width: '100%',
-    gap: 5,                    // space between buttons
-    marginTop: 65,   // pushes buttons downward
+    gap: 5,
+    marginTop: 65,
   },
 
-  // Green button style
   button: {
     width: '90%',
     backgroundColor: '#1a5c38',
@@ -231,30 +280,47 @@ container: {
     marginBottom: 12,
   },
 
-  // White text inside buttons
+  // Face ID button - slightly different style to stand out
+  faceIDButton: {
+    width: '90%',
+    backgroundColor: '#0a3d22',
+    paddingVertical: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    alignSelf: 'center',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#1a5c38',
+  },
+
   buttonText: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
   },
 
-  // Email and password input fields
   input: {
     width: '90%',
     borderWidth: 1,
     borderColor: '#1a5c38',
     borderRadius: 8,
     padding: 15,
-    marginBottom:6,
+    marginBottom: 6,
     fontSize: 16,
     color: '#333',
     alignSelf: 'center',
   },
 
-  // Back link text
   backText: {
     color: '#1a5c38',
     marginTop: 16,
     fontSize: 16,
+  },
+
+  faceIDText: {
+    color: '#1a5c38',
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: '600',
   },
 })
